@@ -69,7 +69,8 @@ def MaxPooling1D(pool_size=2, strides=None, padding="valid"):
 def Dropout(rate=0.2):
 
     layer = keras.layers.Dropout(
-        rate=rate, noise_shape=None, seed=2024)
+        rate=rate, noise_shape=None, seed=2024
+    )
 
     return layer
 
