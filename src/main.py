@@ -116,8 +116,7 @@ class CGAN(keras.Model):
 
 
 c_gan = CGAN(
-    discriminator=discriminator, generator=generator, latent_dim=latent_dim
-)
+    discriminator=discriminator, generator=generator)
 c_gan.compile(
     d_optimizer=keras.optimizers.Adam(learning_rate=0.0003),
     g_optimizer=keras.optimizers.Adam(learning_rate=0.0003),
