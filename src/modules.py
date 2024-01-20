@@ -1,18 +1,19 @@
 import layers
-from keras.layers import Input, Add, UpSampling1D, concatenate, Multiply
+from keras.layers import Input, Add, UpSampling1D, concatenate, Multiply, Flatten
 from keras.models import Model, Sequential
 
 
 
 ## Recurrent Residual 1DCNN
-def recurrent_residual_conv1d(input_layer, filters, kernel_size=3):
+def recurrent_residual_conv1d(input_layer, filters, kernel_size):
     # First Convolution
-    conv = Covid1D(filters, kernel_size, padding='same', stride=1)(input_layer)
-    conv = BatchNormalization()(conv)
-    conv = Activation(conv, 'relu')
+    conv = layers.Conv1D(filters, kernel_size, padding='same', strides=1)(input_layer)
+    conv = layers.BatchNormalization()(conv)
+    conv = layers.Activation(conv, 'relu')
+    print(conv)
 
     # Recurrent Layer
-    recurrent = Covid1D(filters, kernel_size, padding='same', activation='relu')(conv)
+    recurrent = layers.Conv1D(filters, kernel_size, padding='same', activation='relu')(conv)
     
     # Residual Connection
     residual = Add()([input_layer, recurrent])
@@ -24,11 +25,11 @@ def recurrent_residual_conv1d(input_layer, filters, kernel_size=3):
 ## Attention Block
 def attention_block(x, g, inter_channel):
     
-    theta_x = Covid1D(inter_channel, kernel_size=1, padding='same')(x)
-    phi_g = Covid1D(inter_channel, kernel_size=1, padding='same')(g)
+    theta_x = layers.Conv1D(inter_channel, kernel_size=1, padding='same')(x)
+    phi_g = layers.Conv1D(inter_channel, kernel_size=1, padding='same')(g)
 
-    f = Activation('relu')(Add()([theta_x, phi_g]))
-    psi_f = Covid1D(1, kernel_size=1, padding='same', activation='sigmoid')(f)
+    f = layers.Activation(Add()([theta_x, phi_g]),'relu')
+    psi_f = layers.Conv1D(1, kernel_size=1, padding='same', activation='sigmoid')(f)
 
     return Multiply()([x, psi_f])
 
@@ -36,21 +37,24 @@ def attention_block(x, g, inter_channel):
 
 
 ## Attention Recurrent Residual Convolutional Neural Network based on U-Net
-def AR2U_Net(input_size, depth, initial_filters, kernel_size):
+def AR2U_Net(input_size, depth=6, initial_filters=64, kernel_size=16):
     inputs = Input(input_size)
 
-    # Encoder path
     encoders = []
     for i in range(depth):
+
         if i == 0:
-            x = recurrent_residual_conv1d(inputs, filters, kernel_size)
+            x = recurrent_residual_conv1d(inputs, initial_filters, kernel_size)
+            print('HI')
         else:
+            filters = initial_filters * (2 ** i)
+            if filters >= 512: filters = 512
             x = recurrent_residual_conv1d(encoders[-1][0], filters, kernel_size)
-        p = MaxPooling1D(pool_size=2)(x)
+            print('HI2')
+        p = layers.MaxPooling1D(pool_size=2)(x)
         encoders.append((x, p))
 
-        filters = initial_filters * (2 ** i)
-        if filters >= 512: filters = 512
+
 
     # Bottleneck
     bottleneck = recurrent_residual_conv1d(encoders[-1][1], 512, kernel_size)
@@ -66,7 +70,7 @@ def AR2U_Net(input_size, depth, initial_filters, kernel_size):
         x = recurrent_residual_conv1d(x, filters, kernel_size)
 
     # Output layer
-    output = Conv1D(1, kernel_size, padding='same', activation='tanh')(x)
+    output = layers.Conv1D(1, kernel_size, padding='same', activation='tanh')(x)
 
     model = Model(inputs=inputs, outputs=output)
     return model
@@ -74,63 +78,66 @@ def AR2U_Net(input_size, depth, initial_filters, kernel_size):
 
 
 ## Attention Convolutional Neural Network based on U-Net
-def A_Net(input_size, depth, initial_filters, kernel_size):
+def AU_Net(input_size, depth=4, initial_filters=64, kernel_size=16):
     inputs = Input(input_size)
 
     # Encoder path
     encoders = []
     for i in range(depth):
         if i == 0:
-            x = Conv1D(filters, kernel_size, padding='same', activation='relu')(inputs)
+            x = layers.Conv1D(initial_filters, kernel_size, padding='same', activation='relu')(inputs)
+            x = layers.Conv1D(initial_filters, kernel_size, padding='same', activation='relu')(x)
         else:
-            x = Conv1D(filters, kernel_size, padding='same', activation='relu')(encoders[-1][1])
-        x = Conv1D(filters, kernel_size, padding='same', activation='relu')(encoders[-1][1])
-        r = Add()([input_layer, recurrent])
+            filters = initial_filters * (2 ** i)
+            if filters > 512: filters = 512
+            x = layers.Conv1D(filters, kernel_size, padding='same', activation='relu')(encoders[-1][1])
+            x = layers.Conv1D(filters, kernel_size, padding='same', activation='relu')(encoders[-1][1])
 
-        p = MaxPooling1D(pool_size=2)(r)
-        encoders.append((r, p))
+        p = layers.MaxPooling1D(pool_size=2)(x)
+        encoders.append((x, p))
 
-        filters = initial_filters * (2 ** i)
-        if filters > 512: filters = 512
+
 
     # Bottleneck
-    bottleneck = Conv1D(512, kernel_size, activation='relu', padding='same')(encoders[-1][1])
-    bottleneck = Conv1D(512, kernel_size, activation='relu', padding='same')(bottleneck)
+    bottleneck = layers.Conv1D(512, kernel_size, activation='relu', padding='same')(encoders[-1][1])
+    bottleneck = layers.Conv1D(512, kernel_size, activation='relu', padding='same')(bottleneck)
 
     # Decoder path
     for i in reversed(range(depth)):
         filters = initial_filters * (2 ** i)
         if filters > 512: filters = 512
         if filters <= 64: filters = 64
+
         u = UpSampling1D(size=2)(bottleneck if i == depth - 1 else x)
-        attn = attention_block(encoders[i][0], u, filters)
-        x = Conv1D(filters, kernel_size, padding='same', activation='relu')(concatenate([u, attn]))
-        x = Conv1D(filters, kernel_size, padding='same', activation='relu')(x)
+        #attn = attention_block(encoders[i][0], u, filters)
+        x = layers.Conv1D(filters, kernel_size, padding='same', activation='relu')(u)#(concatenate([u, attn]))
+        x = layers.Conv1D(filters, kernel_size, padding='same', activation='relu')(x)
+
 
     # Output layer
-    output = Conv1D(1, kernel_size, padding='same', activation='tanh')(x)
+    output = layers.Conv1D(1, 1, padding='same', activation='tanh')(x)
 
     model = Model(inputs=inputs, outputs=output)
     return model
 
 
 ## Discriminator's Architecture
-def discriminator(shape, kernel_size, strides=2):
+def discriminator(shape, kernel_size=16, strides=2):
     model = Sequential()
     
-    model.add(Conv1D(64, kernel_size=kernel_size, strides=strides, input_shape=shape, padding="same", activation='leaky_relu'))
-    model.add(Conv1D(64, kernel_size=kernel_size, strides=strides, padding="same", activation='leaky_relu'))
-    model.add(BatchNormalization())
-    model.add(MaxPooling1D(pool_size=2))
-    model.add(Dropout())
+    model.add(layers.Conv1D(32, kernel_size=kernel_size, strides=strides, padding="same", activation='leaky_relu'))
+    model.add(layers.Conv1D(32, kernel_size=kernel_size, strides=strides, padding="same", activation='leaky_relu'))
+    model.add(layers.BatchNormalization())
+    model.add(layers.MaxPooling1D(pool_size=2))
+    model.add(layers.Dropout())
     
-    model.add(Conv1D(128, kernel_size=kernel_size, strides=strides, padding="same", activation='leaky_relu'))
-    model.add(Conv1D(128, kernel_size=kernel_size, strides=strides, padding="same", activation='leaky_relu'))
-    model.add(BatchNormalization())
-    model.add(Dropout())
+    model.add(layers.Conv1D(128, kernel_size=kernel_size, strides=strides, padding="same", activation='leaky_relu'))
+    model.add(layers.Conv1D(128, kernel_size=kernel_size, strides=strides, padding="same", activation='leaky_relu'))
+    model.add(layers.BatchNormalization())
+    model.add(layers.Dropout())
     
     model.add(Flatten())
-    model.add(Dense(1, activation='sigmoid'))
+    model.add(layers.Dense(1, activation='sigmoid'))
 
     input = Input(shape=shape)
     validity = model(input)

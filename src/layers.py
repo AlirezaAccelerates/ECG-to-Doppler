@@ -15,7 +15,7 @@ def Conv1D(filters, kernel_size, strides=1, padding='same', activation=None, use
     return layer
 
 
-def Dense(units):
+def Dense(units, activation):
 
     layer = keras.layers.Dense(
         units=units, activation=None, use_bias=True, kernel_initializer="glorot_uniform",
